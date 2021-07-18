@@ -104,8 +104,9 @@ class client {
             }
 
             // Read the response headers, which are terminated by a blank line.
-            boost::asio::async_read(socket_, response_, boost::asio::transfer_at_least(1),
-                                    boost::bind(&client::handle_read_headers, this, boost::asio::placeholders::error));
+            boost::asio::async_read_until(
+                    socket_, response_, "\r\n\r\n",
+                    boost::bind(&client::handle_read_headers, this, boost::asio::placeholders::error));
         } else {
             std::cout << "Error: " << err << "\n";
         }
@@ -113,12 +114,12 @@ class client {
 
     void handle_read_headers(const boost::system::error_code &err) {
         if (!err) {
+            // Process the response headers.
             std::istream response_stream(&response_);
-
             std::string header;
             while (std::getline(response_stream, header) && header != "\r")
                 std::cout << header << "\n";
-
+            std::cout << "\n";
             // Write whatever content we already have to output.
             if (response_.size() > 0)
                 std::cout << &response_;
@@ -151,7 +152,7 @@ class client {
     std::ofstream outfile_;
 };
 
-int main(int argc, char *argv[]) {
+int main0(int argc, char *argv[]) {
     try {
         if (argc != 3) {
             std::cout << "Usage: async_client <server> <path>\n";
