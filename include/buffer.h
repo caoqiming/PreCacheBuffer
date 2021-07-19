@@ -7,10 +7,12 @@
 #include <unordered_map>
 
 struct ResourceInfo {
-    int size;
-    int visit_times;
+    size_t size;
+    size_t visit_times;
     std::string url;
-    ResourceInfo(int s, std::string u) : size(s), url(u), visit_times(0){};
+    bool is_in_memory;
+    char *p;
+    ResourceInfo(size_t s, std::string u) : size(s), url(u), visit_times(0), is_in_memory(false), p(nullptr){};
 };
 
 class PCBuffer {
@@ -36,6 +38,8 @@ class PCBuffer {
     bool add_resource(void *r, int data_size, std::string url);
 
     bool delete_resource(std::string url);
+
+    bool get_resource_from_http_2file(string url);
 
  private:
     PCBuffer() {}

@@ -1,171 +1,56 @@
-//
-// async_client.cpp
-// ~~~~~~~~~~~~~~~~
-//
-// Copyright (c) 2003-2021 Christopher M. Kohlhoff (chris at kohlhoff dot com)
-//
-// Distributed under the Boost Software License, Version 1.0. (See accompanying
-// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
-//
+#include <iostream> // std::cout
 
-#include <boost/asio.hpp>
-#include <boost/bind/bind.hpp>
-#include <iostream>
-#include <istream>
-#include <ostream>
-#include <string>
-#include <fstream>
+#include <thread> // std::thread
 
-using boost::asio::ip::tcp;
+#include <mutex> // std::mutex, std::unique_lock
 
-class client {
- public:
-    ~client(){
-        
-        
-        //outfile.write(response_.read())
-        
-        outfile_.close();
-    }
-    client(boost::asio::io_context &io_context, const std::string &server, const std::string &path)
-        : resolver_(io_context), socket_(io_context) {
-        outfile_.open("netdata", std::ios::app | std::ios::binary);
-        // Form the request. We specify the "Connection: close" header so that
-        // the server will close the socket after transmitting the response.
-        // This will allow us to treat all data up until the EOF as the content.
-        std::ostream request_stream(&request_);
-        request_stream << "GET " << path << " HTTP/1.0\r\n";
-        request_stream << "Host: " << server << "\r\n";
-        request_stream << "Accept: */*\r\n";
-        request_stream << "Connection: close\r\n\r\n";
+#include <condition_variable> // std::condition_variable
 
-        // Start an asynchronous resolve to translate the server and service
-        // names into a list of endpoints.
-        resolver_.async_resolve(server, "http",
-                                boost::bind(&client::handle_resolve, this, boost::asio::placeholders::error,
-                                            boost::asio::placeholders::results));
-    }
+std::mutex mtx; // 全局互斥锁.
 
- private:
-    void handle_resolve(const boost::system::error_code &err, const tcp::resolver::results_type &endpoints) {
-        if (!err) {
-            // Attempt a connection to each endpoint in the list until we
-            // successfully establish a connection.
-            boost::asio::async_connect(socket_, endpoints,
-                                       boost::bind(&client::handle_connect, this, boost::asio::placeholders::error));
-        } else {
-            std::cout << "Error: " << err.message() << "\n";
-        }
-    }
+std::condition_variable cv; // 全局条件变量.
 
-    void handle_connect(const boost::system::error_code &err) {
-        if (!err) {
-            // The connection was successful. Send the request.
-            boost::asio::async_write(
-                    socket_, request_,
-                    boost::bind(&client::handle_write_request, this, boost::asio::placeholders::error));
-        } else {
-            std::cout << "Error: " << err.message() << "\n";
-        }
-    }
+bool ready = false; // 全局标志位.
 
-    void handle_write_request(const boost::system::error_code &err) {
-        if (!err) {
-            // Read the response status line. The response_ streambuf will
-            // automatically grow to accommodate the entire line. The growth may
-            // be limited by passing a maximum size to the streambuf
-            // constructor.
-            boost::asio::async_read_until(
-                    socket_, response_, "\r\n",
-                    boost::bind(&client::handle_read_status_line, this, boost::asio::placeholders::error));
-        } else {
-            std::cout << "Error: " << err.message() << "\n";
-        }
-    }
+void do_print_id(int id) {
 
-    void handle_read_status_line(const boost::system::error_code &err) {
-        if (!err) {
-            // Check that response is OK.
-            std::istream response_stream(&response_);
-            std::string http_version;
-            response_stream >> http_version;
-            unsigned int status_code;
-            response_stream >> status_code;
-            std::string status_message;
-            std::getline(response_stream, status_message);
-            if (!response_stream || http_version.substr(0, 5) != "HTTP/") {
-                std::cout << "Invalid response\n";
-                return;
-            }
-            if (status_code != 200) {
-                std::cout << "Response returned with status code ";
-                std::cout << status_code << "\n";
-                return;
-            }
+    std::unique_lock<std::mutex> lck(mtx);
 
-            // Read the response headers, which are terminated by a blank line.
-            boost::asio::async_read(socket_, response_, boost::asio::transfer_at_least(1),
-                                    boost::bind(&client::handle_read_headers, this, boost::asio::placeholders::error));
-        } else {
-            std::cout << "Error: " << err << "\n";
-        }
-    }
+    while (!ready) // 如果标志位不为 true, 则等待...
 
-    void handle_read_headers(const boost::system::error_code &err) {
-        if (!err) {
-            std::istream response_stream(&response_);
+        cv.wait(lck); // 当前线程被阻塞, 当全局标志位变为 true 之后,
 
-            std::string header;
-            while (std::getline(response_stream, header) && header != "\r")
-                std::cout << header << "\n";
+    // 线程被唤醒, 继续往下执行打印线程编号id.
 
-            // Write whatever content we already have to output.
-            if (response_.size() > 0)
-                std::cout << &response_;
-            // Start reading remaining data until EOF.
-            boost::asio::async_read(socket_, response_, boost::asio::transfer_at_least(1),
-                                    boost::bind(&client::handle_read_content, this, boost::asio::placeholders::error));
-        } else {
-            std::cout << "Error: " << err << "\n";
-        }
-    }
+    std::cout << "thread " << id << '\n';
+}
 
-    void handle_read_content(const boost::system::error_code &err) {
-        if (!err) {
-            // Write all of the data that has been read so far.
-            //std::cout << std::endl << "-------" << std::endl;
-            //std::cout << &response_;
-            outfile_<<&response_;
-            // Continue reading remaining data until EOF.
-            boost::asio::async_read(socket_, response_, boost::asio::transfer_at_least(1),
-                                    boost::bind(&client::handle_read_content, this, boost::asio::placeholders::error));
-        } else if (err != boost::asio::error::eof) {
-            std::cout << "Error: " << err << "\n";
-        }
-    }
+void go()
 
-    tcp::resolver resolver_;
-    tcp::socket socket_;
-    boost::asio::streambuf request_;
-    boost::asio::streambuf response_; 
-    std::ofstream outfile_;
-};
+{
 
-int main(int argc, char *argv[]) {
-    try {
-        if (argc != 3) {
-            std::cout << "Usage: async_client <server> <path>\n";
-            std::cout << "Example:\n";
-            std::cout << "  async_client www.boost.org /LICENSE_1_0.txt\n";
-            return 1;
-        }
+    std::unique_lock<std::mutex> lck(mtx);
 
-        boost::asio::io_context io_context;
-        client c(io_context, argv[1], argv[2]);
-        io_context.run();
-    } catch (std::exception &e) {
-        std::cout << "Exception: " << e.what() << "\n";
-    }
+    ready = true; // 设置全局标志位为 true.
 
+    cv.notify_all(); // 唤醒所有线程.
+}
+
+int main()
+
+{
+
+    std::thread threads[10];
+
+    // spawn 10 threads:
+
+    for (int i = 0; i < 10; ++i)
+        threads[i] = std::thread(do_print_id, i);
+    std::cout << "10 threads ready to race...\n";
+
+    go(); // go!
+
+    for (auto &th : threads)
+        th.join();
     return 0;
 }
