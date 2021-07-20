@@ -5,14 +5,17 @@
 #include <mutex>
 #include <string>
 #include <unordered_map>
+#include <shared_mutex>
+#include "constant.h"
 
 struct ResourceInfo {
     size_t size;
-    size_t visit_times;
+    unsigned int visit_times;
     std::string url;
     bool is_in_memory;
     char *p;
     ResourceInfo(size_t s, std::string u) : size(s), url(u), visit_times(0), is_in_memory(false), p(nullptr){};
+    ResourceInfo(size_t s, std::string u ,char* p) : size(s), url(u), visit_times(0), is_in_memory(true), p(p){};
 };
 
 class PCBuffer {
@@ -25,34 +28,43 @@ class PCBuffer {
     virtual ~PCBuffer() {}
 
     template <class T> void log(T s) {
-        std::lock_guard<std::mutex> lck(mutex_);
+        std::lock_guard<std::mutex> lck(log_mutex_);
         std::ofstream outfile("bufferlog.txt", std::ios::out | std::ios::app);
         outfile << s << std::endl;
         outfile.close();
     }
 
-    bool get_resource_from_net(std::string url);
+    bool get_resource_info(std::string url ,std::shared_ptr<ResourceInfo> &ri ,bool flag_not_add_visit_times = false); // Get resource from net or buf ,return ResourceInfo
 
-    bool get_resource_from_buffer(std::string url);
 
-    bool add_resource(void *r, int data_size, std::string url);
+ private:
+
+    bool add_resource(std::shared_ptr<ResourceInfo> ri);
 
     bool delete_resource(std::string url);
 
-    bool get_resource_from_http_2file(string url);
+    bool get_resource_from_http_2file(const std::string & server, const std::string & path, size_t * size);
 
- private:
     PCBuffer() {}
     PCBuffer(const PCBuffer &rhs) = delete;
     PCBuffer &operator=(const PCBuffer &rhs) = delete;
     bool initialized_{false};
     bool quit_flag_{false};
     std::condition_variable cv_;
-    std::mutex mutex_;
-    std::mutex buffer_mutex_;
-    int current_size{0}; // byte
-    int MAX_SIZE{1024};
-    std::unordered_map<std::string, std::shared_ptr<ResourceInfo>> resource_map;
+    std::mutex log_mutex_;
+    std::shared_mutex buffer_mutex_;
+    size_t current_size_{0}; // byte
+    int MAX_SIZE{MAX_BUFFER_SIZE};
+    std::unordered_map<std::string, std::shared_ptr<ResourceInfo>> resource_map_;
 };
 
 #endif // BUFFER_H_
+
+/*
+todo 
+delete resource file or release memory
+api:when and where call the precached strategy
+api:how to move resource to client part
+put resource in memory
+where to use thread pool
+*/

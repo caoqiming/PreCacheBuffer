@@ -14,8 +14,10 @@ using boost::asio::ip::tcp;
 class HttpClient {
  public:
     ~HttpClient() { outfile_.close(); }
-    HttpClient(boost::asio::io_context &io_context, const std::string &server, const std::string &path)
+    HttpClient(boost::asio::io_context &io_context, const std::string &server, const std::string &path, size_t *size)
         : resolver_(io_context), socket_(io_context) {
+        *size = static_cast<size_t>(0);
+        size_ = size;
         outfile_.open("data/" + path.substr(path.find_last_of('/') + 1), std::ios::app | std::ios::binary);
         std::ostream request_stream(&request_);
         request_stream << "GET " << path << " HTTP/1.0\r\n";
@@ -116,6 +118,7 @@ class HttpClient {
             // Write all of the data that has been read so far.
             // std::cout << std::endl << "-------" << std::endl;
             // std::cout << &response_;
+            *size_+=response_.size();
             outfile_ << &response_;
             // Continue reading remaining data until EOF.
             boost::asio::async_read(
@@ -131,6 +134,7 @@ class HttpClient {
     boost::asio::streambuf request_;
     boost::asio::streambuf response_;
     std::ofstream outfile_;
+    size_t* size_;
 };
 
 #endif // HTTP_CLIENT_HPP_
