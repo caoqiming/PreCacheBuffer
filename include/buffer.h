@@ -6,7 +6,9 @@
 #include <string>
 #include <unordered_map>
 #include <shared_mutex>
+#include <ctime>
 #include "constant.h"
+#include "util.hpp"
 
 struct ResourceInfo {
     size_t size;
@@ -28,8 +30,16 @@ class PCBuffer {
     virtual ~PCBuffer() {}
 
     template <class T> void log(T s) {
+        time_t now = time(0);
+        tm *gmtm = gmtime(&now);
         std::lock_guard<std::mutex> lck(log_mutex_);
         std::ofstream outfile("bufferlog.txt", std::ios::out | std::ios::app);
+        std::string time;
+        time = format("%d.%d %d:%d ",gmtm->tm_year+1900,gmtm->tm_mday,(gmtm->tm_hour+8)%24,gmtm->tm_min);
+        while(time.size()<14){
+            time += ' ';
+        }
+        outfile << time;
         outfile << s << std::endl;
         outfile.close();
     }

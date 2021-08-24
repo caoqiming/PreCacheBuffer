@@ -1,7 +1,6 @@
 #include "buffer.h"
 
 #include "http_client.hpp"
-#include "util.hpp"
 #include <boost/asio.hpp>
 #include <boost/bind/bind.hpp>
 
