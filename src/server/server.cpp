@@ -11,6 +11,9 @@
 #include "server.hpp"
 #include <signal.h>
 #include <utility>
+#include <iostream>
+#include "my_thread_pool.hpp"
+//#include<windows.h>
 
 namespace http {
 namespace server {
@@ -36,8 +39,7 @@ server::server(const std::string& address, const std::string& port,
 
   // Open the acceptor with the option to reuse the address (i.e. SO_REUSEADDR).
   boost::asio::ip::tcp::resolver resolver(io_context_);
-  boost::asio::ip::tcp::endpoint endpoint =
-    *resolver.resolve(address, port).begin();
+  boost::asio::ip::tcp::endpoint endpoint = *resolver.resolve(address, port).begin();
   acceptor_.open(endpoint.protocol());
   acceptor_.set_option(boost::asio::ip::tcp::acceptor::reuse_address(true));
   acceptor_.bind(endpoint);
@@ -66,13 +68,13 @@ void server::do_accept()
         {
           return;
         }
-
         if (!ec)
         {
-          connection_manager_.start(std::make_shared<connection>(
-              std::move(socket), connection_manager_, request_handler_));
+          // 这里虽然是异步但是依然只有一个线程，把这里改成多线程即可
+            MyThreadPool& tp = MyThreadPool::get_instance();
+            boost::asio::post(*tp.get_pool(), boost::bind(&connection_manager::start,&connection_manager_,std::make_shared<connection>(std::move(socket), connection_manager_, request_handler_)));
+            //connection_manager_.start(std::make_shared<connection>(std::move(socket), connection_manager_, request_handler_));
         }
-
         do_accept();
       });
 }

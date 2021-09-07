@@ -1,34 +1,59 @@
 #include <iostream> // std::cout
 #include "buffer.h"
-
+#include "my_thread_pool.hpp"
 #include <iostream>
 #include <string>
 #include <boost/asio.hpp>
 #include "server.hpp"
 
+#include "boost/bind.hpp"
+#include "boost/function.hpp"
+
 int main(int argc, char* argv[])
 {
-  try
-  {
 
-    // Initialise the server.
-    http::server::server s("0.0.0.0", "80",".");
+    MyThreadPool& tp = MyThreadPool::get_instance();
+    tp.init(10);
 
-    // Run the server until stopped.
-    s.run();
-  }
-  catch (std::exception& e)
-  {
-    std::cerr << "exception: " << e.what() << "\n";
-  }
+    try
+    {
+        // Initialise the server.
+        http::server::server s("0.0.0.0", "80",".");
 
-  return 0;
+        // Run the server until stopped.
+        s.run();
+    }
+    catch (std::exception& e)
+    {
+        std::cerr << "exception: " << e.what() << "\n";
+    }
+
+    return 0;
 }
 
 
+class CCommunicationMap
+{
+public:
+    static CCommunicationMap &get_instance() {
+        static CCommunicationMap instance;
+        return instance;
+    }
+
+    void TestCommand( int nParam){
+        std::cout << nParam;
+    }
+};
 
 
 
+
+int main0(){
+    CCommunicationMap &m_communication=CCommunicationMap::get_instance();
+    auto fun =  boost::bind(&CCommunicationMap::TestCommand, &m_communication, 22);
+    fun();
+    return 0;
+}
 
 
 

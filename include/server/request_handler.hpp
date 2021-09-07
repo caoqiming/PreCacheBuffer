@@ -12,6 +12,7 @@
 #define HTTP_REQUEST_HANDLER_HPP
 
 #include <string>
+#include "my_thread_pool.hpp"
 
 namespace http {
 namespace server {

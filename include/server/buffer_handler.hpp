@@ -1,6 +1,6 @@
 #ifndef BUFFER_HANDLER_HPP
 #define BUFFER_HANDLER_HPP
-#include<iostream>
+#include <iostream>
 #include "reply.hpp"
 #include "request.hpp"
 #include <boost/property_tree/ptree.hpp>
@@ -8,6 +8,8 @@
 #include <boost/date_time.hpp>
 #include <boost/foreach.hpp>
 #include <string>
+#include "buffer.h"
+
 namespace http {
 namespace server {
 	bool json_decode(std::string strResponse,std::shared_ptr<boost::property_tree::ptree>pt){
@@ -23,7 +25,30 @@ namespace server {
 	}
 
 	void get_resource_info_handler(std::shared_ptr<boost::property_tree::ptree>pt,std::string &response_body){
-		response_body = "ohhh";
+		// check request
+		if(pt->find("url")==pt->not_found()){
+			response_body = "{\"error\":\"key: url not found\"}";
+			return;
+		}
+		PCBuffer &bf=PCBuffer::get_instance();
+		std::shared_ptr<ResourceInfo> ri;
+		if(bf.get_resource_info( pt->get<std::string>("url"), ri)){
+			boost::property_tree::ptree response_pt;
+			response_pt.put<std::string>("file_name", ri->file_name);
+			response_pt.put<int>("status", 0);
+			std::stringstream wos;
+			boost::property_tree::write_json(wos, response_pt);
+			response_body = wos.str();
+		}
+		else{ // failed to get resource
+			boost::property_tree::ptree response_pt;
+			response_pt.put<int>("status", 1);
+			response_pt.put<std::string>("error", "get this url failed");
+			std::stringstream wos;
+			boost::property_tree::write_json(wos, response_pt);
+			response_body = wos.str();
+		}
+
 	}
 
 
@@ -53,7 +78,6 @@ namespace server {
 			response_body = "{\"error\":\"unkonwn type\"}";
 			}
 		}
-		std::cout << response_body;
 
 
 		rep.content.append(response_body.c_str(), response_body.size());
