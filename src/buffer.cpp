@@ -1,6 +1,44 @@
 #include "buffer.h"
+#include "util.h"
+#include "http_client.hpp"
+#include "https_client.hpp"
+#include <boost/bind/bind.hpp>
+#include <ctime>
+#include <queue>
 
 
+PCBuffer::PCBuffer(){
+    //boost::filesystem::path tmpPath("dataset/trainset.txt");
+    //boost::filesystem::remove(tmpPath);
+    //读取配置文件
+    std::ifstream  config_file;
+    config_file.open("config.json", std::ios::in);
+    std::stringstream buffer;  
+    buffer << config_file.rdbuf();  
+    std::string config(buffer.str());
+    config_file.close();
+	auto pt = std::make_shared<boost::property_tree::ptree>();
+	if(!json_decode(config,pt)){
+        std::cerr << "读取配置文件config.json出错\n";
+        return;
+	}
+    if(pt->find("strategy")!=pt->not_found()){
+        switch(pt->get<int>("strategy")){
+        case StrategyByTime:
+            strategy_ = std::make_shared<PCStrategyTime>(&resource_map_);//&resource_map_
+            //strategy_ = new PCStrategyTime(&resource_map_);
+            break;
+        default:
+            strategy_ = std::make_shared<PCStrategyTime>(&resource_map_);
+            //strategy_ = new PCStrategyTime(&resource_map_);
+        }
+    }
+    if(pt->find("max_size")!=pt->not_found()){
+        max_size_=pt->get<size_t>("max_size");
+    }
+
+
+}
 
 bool PCBuffer::add_resource(std::shared_ptr<ResourceInfo> ri) {
     if(ri==nullptr){
@@ -8,10 +46,11 @@ bool PCBuffer::add_resource(std::shared_ptr<ResourceInfo> ri) {
         return false;
     }
     std::shared_lock<std::shared_mutex> lck(buffer_mutex_);
-    if (ri->size + current_size_ > MAX_SIZE) {
+    if (ri->size + current_size_ > max_size_) {
         log(format("try to add_resource failed due to insufficient space, url: %s "
                    "data_size: %d ,max_size: %d",
-                   ri->url.c_str(), ri->size, MAX_SIZE));
+                   ri->url.c_str(), ri->size, max_size_));
+        std::cerr << "warining: add resource failed!\n";
         return false;
     }
     if (resource_map_.find(ri->url) != resource_map_.end()) {
@@ -23,7 +62,32 @@ bool PCBuffer::add_resource(std::shared_ptr<ResourceInfo> ri) {
     return true;
 }
 
-bool PCBuffer::delete_resource(std::string url) {
+size_t PCBuffer::get_max_size()
+{
+    return max_size_;
+}
+
+size_t PCBuffer::get_current_size()
+{
+    return current_size_;
+}
+
+size_t PCBuffer::get_cached_number()
+{
+    return resource_map_.size();
+}
+
+std::string PCBuffer::get_strategy()
+{
+    return strategy_->get_name();
+}
+
+std::unordered_map<std::string, std::shared_ptr<ResourceInfo>>& PCBuffer::get_resource_map()
+{
+    return resource_map_;
+}
+
+bool PCBuffer::delete_resource_by_url(std::string url) {
     std::unique_lock<std::shared_mutex> lck(buffer_mutex_);
     auto it = resource_map_.find(url);
     if (it == resource_map_.end()) {
@@ -42,7 +106,7 @@ bool PCBuffer::delete_resource(std::string url) {
     return true;
 }
 
-bool PCBuffer::delete_resource(std::shared_ptr<ResourceInfo> ri)
+bool PCBuffer::delete_resource_by_ri(std::shared_ptr<ResourceInfo> ri)
 {
     current_size_ -= ri->size;
     if(ri->is_in_memory && ri->p){
@@ -59,8 +123,7 @@ bool PCBuffer::delete_resource(std::shared_ptr<ResourceInfo> ri)
     return true;
 }
 
-void PCBuffer::clear_resource()
-{
+void PCBuffer::clear_resource(){
     {
         std::unique_lock<std::shared_mutex> lck(buffer_mutex_);
         for(auto &it:resource_map_){
@@ -116,6 +179,7 @@ bool PCBuffer::get_resource_info(std::string url ,std::shared_ptr<ResourceInfo> 
     if (it != resource_map_.end()) { // resource found in buffer
         it->second->visit_times++;
         ri = it->second;
+        strategy_->buffered_resource_visited(ri);
         return true;
     }
     // get resource from net
@@ -130,6 +194,10 @@ bool PCBuffer::get_resource_info(std::string url ,std::shared_ptr<ResourceInfo> 
     }
     std::string server, path;
     int index = url.find_first_of("/");
+    if(index==-1){
+        log(format("invalid url: %s", url.c_str()));
+        return false;
+    }
     server = url.substr(0, index);
     path = url.substr(index);
     if (server.empty() || path.empty()) {
@@ -159,12 +227,29 @@ bool PCBuffer::get_resource_info(std::string url ,std::shared_ptr<ResourceInfo> 
         delete size;
     }
 
-    if(!add_resource(new_ri)){
-        return false;
+    if (strategy_->buffer_new_resource(new_ri,current_size_,max_size_)) {//判断是否缓存
+        //如果要缓存则清除出足够的空间 清除的策略也要用strategy_里的
+        long long need_more_size =  new_ri->size + current_size_ - max_size_;
+        if(need_more_size>0){
+            strategy_->clear_buffer_for_size(static_cast<size_t>(need_more_size), this, &PCBuffer::delete_resource_by_ri);
+        }
+
+        if(!add_resource(new_ri)){
+            return false;
+        }
     }
+
     ri = new_ri;
     if(!flag_not_add_visit_times) // if it is preload flag_not_add_visit_times should be true 
         ri->visit_times++;
     return true;
+}
+
+void PCBuffer::add_to_train_set(std::string url, int client){
+    std::lock_guard<std::mutex> lck(train_set_mutex_);
+    std::ofstream outfile("dataset/trainset.txt", std::ios::out | std::ios::app);
+    //outfile << format("{\"url\":\"%s\",\"client\":%d}",url,client) << std::endl;
+    outfile << url << std::endl;
+    outfile.close();
 }
 

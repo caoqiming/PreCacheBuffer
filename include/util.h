@@ -1,8 +1,10 @@
 
-#ifndef UTIL_HPP_
-#define UTIL_HPP_
+#ifndef UTIL_H_
+#define UTIL_H_
 #include <string>
-template <typename... Args> static std::string format(const std::string &format, Args... args) {
+#include <shared_mutex>
+#include <boost/property_tree/ptree.hpp>
+template <typename... Args> std::string format(const std::string &format, Args... args) {
     auto size_buf = std::snprintf(nullptr, 0, format.c_str(), args...) + 1;
     std::unique_ptr<char[]> buf(new (std::nothrow) char[size_buf]);
 
@@ -21,5 +23,7 @@ template <typename T> inline void safe_delete_void_ptr(void *&target) {
         target = nullptr;
     }
 }
+bool json_decode(std::string strResponse, std::shared_ptr<boost::property_tree::ptree>pt);
 
-#endif // UTIL_HPP_
+
+#endif // UTIL_H_ 

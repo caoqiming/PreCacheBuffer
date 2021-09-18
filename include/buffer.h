@@ -6,28 +6,16 @@
 #include <string>
 #include <unordered_map>
 #include <shared_mutex>
-#include <ctime>
 
 #include <boost/asio.hpp>
-#include <boost/bind/bind.hpp>
-#include <boost\filesystem\path.hpp>
-#include <boost\filesystem\operations.hpp>
+#include <boost/filesystem/path.hpp>
+#include <boost/filesystem/operations.hpp>
+
 
 #include "constant.h"
-#include "util.hpp"
-#include "http_client.hpp"
-#include "https_client.hpp"
 
-struct ResourceInfo {
-    size_t size;           // 字节数量
-    unsigned int visit_times;
-    std::string url;
-    bool is_in_memory;
-    char *p;               // 如果在内存中 起始指针
-    std::string file_name; // 如果在磁盘中 文件名
-    ResourceInfo(size_t s, std::string u , std::string file_name) : size(s), url(u), visit_times(0), is_in_memory(false), p(nullptr),file_name(file_name){};
-    ResourceInfo(size_t s, std::string u , char* p) : size(s), url(u), visit_times(0), is_in_memory(true), p(p){};
-};
+#include "pc_strategy.hpp"
+#include "mystrct.hpp"
 
 class PCBuffer {
  public:
@@ -55,22 +43,33 @@ class PCBuffer {
 
     bool get_resource_info(std::string url ,std::shared_ptr<ResourceInfo> &ri ,bool flag_not_add_visit_times = false); // Get resource from net or buf ,return ResourceInfo
 
-    bool delete_resource(std::string url);
+    void add_to_train_set(std::string url,int client); // 向测试集添加数据
 
-    bool delete_resource(std::shared_ptr<ResourceInfo>);
+    bool delete_resource_by_url(std::string url);
+
+    bool delete_resource_by_ri(std::shared_ptr<ResourceInfo>);
 
     void clear_resource();
 
     bool add_resource(std::shared_ptr<ResourceInfo> ri);
 
- private:
+    size_t get_max_size();
 
+    size_t get_current_size(); // used size
+
+    size_t get_cached_number();
+
+    std::string get_strategy();
+
+    std::unordered_map<std::string, std::shared_ptr<ResourceInfo>>& get_resource_map();
+
+ private:
 
     bool get_resource_from_http_2file(const std::string & server, const std::string & path, size_t * size);
 
     bool get_resource_from_https_2file(const std::string & server, const std::string & path, size_t * size);
 
-    PCBuffer() {}
+    PCBuffer();
 
     PCBuffer(const PCBuffer &rhs) = delete;
 
@@ -80,11 +79,15 @@ class PCBuffer {
     bool quit_flag_{false};
     std::condition_variable cv_;
     std::mutex log_mutex_;
+    std::mutex train_set_mutex_;
     std::shared_mutex buffer_mutex_;
     size_t current_size_{0}; // byte
-    int MAX_SIZE{MAX_BUFFER_SIZE};
+    size_t max_size_{MAX_BUFFER_SIZE};
     std::unordered_map<std::string, std::shared_ptr<ResourceInfo>> resource_map_;
+    std::shared_ptr<BaseStrategy>strategy_;
+    //BaseStrategy* strategy_{nullptr};
 };
+
 
 #endif // BUFFER_H_
 
