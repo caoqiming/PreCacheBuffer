@@ -2,10 +2,9 @@
 #include "util.h"
 #include "http_client.hpp"
 #include "https_client.hpp"
-#include <boost/bind/bind.hpp>
 #include <ctime>
 #include <queue>
-
+#include "my_thread_pool.hpp"
 
 PCBuffer::PCBuffer(){
     //boost::filesystem::path tmpPath("dataset/trainset.txt");
@@ -28,6 +27,9 @@ PCBuffer::PCBuffer(){
             strategy_ = std::make_shared<PCStrategyTime>(&resource_map_);//&resource_map_
             //strategy_ = new PCStrategyTime(&resource_map_);
             break;
+        case StrategyByCFAE:
+            strategy_ = std::make_shared<PCStrategy_CF_AutoEncoder>(&resource_map_);
+            break;
         default:
             strategy_ = std::make_shared<PCStrategyTime>(&resource_map_);
             //strategy_ = new PCStrategyTime(&resource_map_);
@@ -36,8 +38,18 @@ PCBuffer::PCBuffer(){
     if(pt->find("max_size")!=pt->not_found()){
         max_size_=pt->get<size_t>("max_size");
     }
-
-
+    running_ = true;
+    MyThreadPool& tp = MyThreadPool::get_instance();
+    boost::asio::post(*tp.get_pool(), boost::bind(&PCBuffer::time_task_handler,this));//启动定时任务
+    //初始化缓存 在用户开始访问之前先缓存一部分内容
+    std::vector<std::string>urls;
+    strategy_->precached_before_start(urls);
+	std::shared_ptr<ResourceInfo> ri;
+    for( std::string &url:urls){
+        //预缓存
+        cout << url << endl;
+        boost::asio::post(*tp.get_pool(), boost::bind(&PCBuffer::get_resource_info,this,url, ri,true));
+    }
 }
 
 bool PCBuffer::add_resource(std::shared_ptr<ResourceInfo> ri) {
@@ -116,7 +128,7 @@ bool PCBuffer::delete_resource_by_ri(std::shared_ptr<ResourceInfo> ri)
         boost::filesystem::path tmpPath("./data/"+ri->file_name);
         boost::filesystem::remove(tmpPath);
     }
-    auto it = resource_map_.find(ri->file_name);
+    auto it = resource_map_.find(ri->url);
     if(it!=resource_map_.end()){
         resource_map_.erase(it);
     }
@@ -145,10 +157,10 @@ void PCBuffer::clear_resource(){
     current_size_ = 0;
 }
 
-bool PCBuffer::get_resource_from_http_2file(const std::string &server,const std::string &path,size_t *size) {
+bool PCBuffer::get_resource_from_http_2file(const std::string &server,const std::string &path, std::string &file_name,size_t *size) {
     try {
         boost::asio::io_context io_context;
-        HttpClient c(io_context, server, path, size);
+        HttpClient c(io_context, server, path, ++resource_id_, file_name, size);
         io_context.run();
         return true;
     } catch (std::exception &e) {
@@ -158,13 +170,13 @@ bool PCBuffer::get_resource_from_http_2file(const std::string &server,const std:
     return false;
 }
 
-bool PCBuffer::get_resource_from_https_2file(const std::string& server, const std::string& path, size_t* size)
+bool PCBuffer::get_resource_from_https_2file(const std::string& server, const std::string& path,std::string &file_name, size_t* size)
 {
     try {
         boost::asio::io_context io_context;
         boost::asio::ssl::context ctx(boost::asio::ssl::context::sslv23);
         ctx.set_default_verify_paths();
-        HttpsClient c(io_context, ctx,server,path,size);
+        HttpsClient c(io_context, ctx,server,path,++resource_id_,file_name,size);
         io_context.run();
         return true;
     } catch (std::exception &e) {
@@ -172,6 +184,29 @@ bool PCBuffer::get_resource_from_https_2file(const std::string& server, const st
         return false;
     }
     return false;
+}
+
+void PCBuffer::time_task_handler()
+{
+    time_t time_now,time_start;//精确到秒
+    time_start = time(NULL);//起始时间
+    time_now = 0;//经过了的时间
+    while(running_){
+        while(time_now<strategy_->get_timed_task_interval()){
+            Sleep(1000);
+            time_now = time(NULL) - time_start;
+        }
+        strategy_->timed_task();
+        //执行完任务后重置计时
+        time_start = time(NULL);
+        time_now = 0;
+    }
+
+}
+
+PCBuffer::~PCBuffer()
+{
+    running_ = false;
 }
 
 bool PCBuffer::get_resource_info(std::string url ,std::shared_ptr<ResourceInfo> &ri ,bool flag_not_add_visit_times){
@@ -205,24 +240,27 @@ bool PCBuffer::get_resource_info(std::string url ,std::shared_ptr<ResourceInfo> 
         return false;
     }
     std::shared_ptr<ResourceInfo> new_ri;
-    if(flag_ssl){
+    if(flag_ssl)
+    {
         size_t* size=new size_t;
-        if(!get_resource_from_https_2file(server, path,size)){
+        std::string file_name;
+        if(!get_resource_from_https_2file(server, path,file_name,size)){
             log(format("get_resource_from_https_2file failed, url: %s", url.c_str()));
             delete size;
             return false;
         }
-        std::string file_name = path.substr(path.find_last_of('/') + 1);
         new_ri = std::make_shared<ResourceInfo>(*size,"https://"+url,file_name);
         delete size;
-    }else{
+    }
+    else
+    {
         size_t* size=new size_t;
-        if(!get_resource_from_http_2file(server, path,size)){
+        std::string file_name;
+        if(!get_resource_from_http_2file(server, path,file_name,size)){
             log(format("get_resource_from_http_2file failed, url: %s", url.c_str()));
             delete size;
             return false;
         }
-        std::string file_name = path.substr(path.find_last_of('/') + 1);
         new_ri = std::make_shared<ResourceInfo>(*size,"http://"+url,file_name);
         delete size;
     }
@@ -233,10 +271,15 @@ bool PCBuffer::get_resource_info(std::string url ,std::shared_ptr<ResourceInfo> 
         if(need_more_size>0){
             strategy_->clear_buffer_for_size(static_cast<size_t>(need_more_size), this, &PCBuffer::delete_resource_by_ri);
         }
-
         if(!add_resource(new_ri)){
-            return false;
+            boost::filesystem::path tmpPath("./data/"+new_ri->file_name);//缓存失败（一般是由于空间限制）就删除已经下载的文件
+            boost::filesystem::remove(tmpPath);
+            return false; 
         }
+    }
+    else{
+        boost::filesystem::path tmpPath("./data/"+new_ri->file_name);//不缓存就删除已经下载的文件
+        boost::filesystem::remove(tmpPath);
     }
 
     ri = new_ri;

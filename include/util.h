@@ -23,7 +23,9 @@ template <typename T> inline void safe_delete_void_ptr(void *&target) {
         target = nullptr;
     }
 }
+
 bool json_decode(std::string strResponse, std::shared_ptr<boost::property_tree::ptree>pt);
 
+void deleteAllMark(std::string& s, const std::string& mark);
 
 #endif // UTIL_H_ 

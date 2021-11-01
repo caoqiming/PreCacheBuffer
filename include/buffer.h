@@ -24,7 +24,7 @@ class PCBuffer {
         return instance;
     }
 
-    virtual ~PCBuffer() {}
+    virtual ~PCBuffer();
 
     template <class T> void log(T s) {
         time_t now = time(0);
@@ -65,9 +65,11 @@ class PCBuffer {
 
  private:
 
-    bool get_resource_from_http_2file(const std::string & server, const std::string & path, size_t * size);
+    bool get_resource_from_http_2file(const std::string & server, const std::string & path, std::string & file_name, size_t * size);
 
-    bool get_resource_from_https_2file(const std::string & server, const std::string & path, size_t * size);
+    bool get_resource_from_https_2file(const std::string & server, const std::string & path, std::string & file_name, size_t * size);
+
+    void time_task_handler();// 单独的一个线程，用来开启定时任务
 
     PCBuffer();
 
@@ -83,8 +85,10 @@ class PCBuffer {
     std::shared_mutex buffer_mutex_;
     size_t current_size_{0}; // byte
     size_t max_size_{MAX_BUFFER_SIZE};
+    size_t resource_id_{ 0 };
     std::unordered_map<std::string, std::shared_ptr<ResourceInfo>> resource_map_;
     std::shared_ptr<BaseStrategy>strategy_;
+    bool running_{ false };
     //BaseStrategy* strategy_{nullptr};
 };
 

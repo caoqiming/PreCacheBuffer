@@ -11,10 +11,12 @@
 
 int main(int argc, char* argv[])
 {
-    PCBuffer &bf=PCBuffer::get_instance();
+    
 
     MyThreadPool& tp = MyThreadPool::get_instance();
     tp.init(10);
+
+    PCBuffer &bf=PCBuffer::get_instance();//buffer 里定时任务有用到线程池，所以必须先初始化线程池再初始化buffer
 
     try
     {

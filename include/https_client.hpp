@@ -1,4 +1,4 @@
-#ifndef HTTPS_CLIENT_HPP_
+#ifndef HTTPS_CLIENT_HPP_ //并不是通用的，只是获取网络资源并保存到文件
 #define HTTPS_CLIENT_HPP_
 
 #include <cstdlib>
@@ -10,6 +10,7 @@
 #include <iostream>
 #include <istream>
 #include <ostream>
+#include "util.h"
 
 class HttpsClient
 {
@@ -17,15 +18,13 @@ public:
     ~HttpsClient(){ outfile_.close(); }
     HttpsClient(boost::asio::io_context& io_context,
         boost::asio::ssl::context& context,
-        const std::string &server,const std::string &path,
-        size_t *size
+        const std::string &server,const std::string &path,size_t resource_id,
+        std::string &file_name,size_t *size
     )
-    : socket_(io_context, context),server_(server),path_(path)
+    : socket_(io_context, context),server_(server),path_(path),resource_id_(resource_id),file_name_(file_name)
     {
         *size = static_cast<size_t>(0);
         size_ = size;
-        outfile_.open("data/" + path.substr(path.find_last_of('/') + 1), std::ios::app | std::ios::binary);
-
         boost::asio::ip::tcp::resolver resolver(io_context);
         boost::asio::ip::tcp::resolver::results_type endpoints = resolver.resolve(server_, "443");
         socket_.set_verify_mode(boost::asio::ssl::verify_peer);
@@ -92,7 +91,15 @@ public:
             std::istream response_stream(&response_);
             std::string header;
             while (std::getline(response_stream, header) && header != "\r") {
-                // std::cout << header << "\n";
+                //get Content-Type
+                if(header.substr(0,12)=="Content-Type"){
+                    file_name_ =std::to_string(resource_id_)+"."+ header.substr(header.find_last_of('/') + 1);
+                    deleteAllMark(file_name_,"\r");
+                    outfile_.open("data/" + file_name_, std::ios::app | std::ios::binary);//path.substr(path.find_last_of('/') + 1)
+                    if (!outfile_) {
+                        std::cout << "打开文件失败,文件名:" <<file_name_<<"\n";
+                    }
+                }
             }
 
             // Start reading remaining data until EOF.
@@ -128,6 +135,8 @@ private:
     std::string path_;
     std::ofstream outfile_;
     size_t* size_;
+    size_t resource_id_;
+    std::string &file_name_;
 };
 
 

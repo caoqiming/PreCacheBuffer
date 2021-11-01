@@ -10,6 +10,8 @@
 #include <string>
 #include "buffer.h"
 #include <util.h>
+#include "http_client_to_python.hpp"
+
 
 namespace http {
 namespace server {
@@ -83,6 +85,27 @@ namespace server {
 		response_body = wos.str();
 	}
 
+	void debug_handler(std::shared_ptr<boost::property_tree::ptree>pt,std::string &response_body){ // 仅用于debug
+		PCBuffer &bf=PCBuffer::get_instance();
+		boost::property_tree::ptree response_pt;
+		response_pt.put<int>("status", 0);
+		std::string server="127.0.0.1",port="8888",request_body,python_response_body, path="/model"; //这里path没用 但是不能为空
+		try {
+			boost::asio::io_context io_context;
+			request_body = "hello";
+			HttpClient2Python c(io_context, server,port, path, request_body,python_response_body);
+			io_context.run();
+		} catch (std::exception &e) {
+			std::cout << "Exception: " << e.what() << "\n";
+		}
+		std::cout << python_response_body;
+
+
+		std::stringstream wos;
+		boost::property_tree::write_json(wos, response_pt);
+		response_body = wos.str();
+	}
+
 	void router(std::string path, const request& req, reply& rep) {
 
 		//std::cout <<"request debug:"<<std::endl;
@@ -115,6 +138,9 @@ namespace server {
 			}
 			else if(type=="get_strategy"){
 				get_strategy_handler(pt,response_body);
+			}
+			else if(type=="debug"){
+				debug_handler(pt,response_body);
 			}
 			else{
 			response_body = "{\"error\":\"unkonwn type\"}";

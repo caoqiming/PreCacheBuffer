@@ -1,6 +1,6 @@
 
-#ifndef HTTP_CLIENT_HPP_ //并不是通用的，只是获取网络资源并保存到文件
-#define HTTP_CLIENT_HPP_
+#ifndef HTTP_CLIENT_TO_PYTHON_HPP_ //并不是通用的，只是获取网络资源并保存到文件
+#define HTTP_CLIENT_TO_PYTHON_HPP_
 #include <boost/asio.hpp>
 #include <boost/bind/bind.hpp>
 #include <fstream>
@@ -12,24 +12,26 @@
 
 using boost::asio::ip::tcp;
 
-class HttpClient {
+class HttpClient2Python {
  public:
-    ~HttpClient() { outfile_.close(); }
-    HttpClient(boost::asio::io_context &io_context, 
-        const std::string &server, const std::string &path,size_t resource_id,
-        std::string &file_name, size_t *size
+    ~HttpClient2Python() {}
+    HttpClient2Python(boost::asio::io_context &io_context, 
+        const std::string &server,const std::string &port, const std::string &path,const std::string &request_body,std::string &body
     )
-        : resolver_(io_context), socket_(io_context),resource_id_(resource_id),file_name_(file_name) 
+        : resolver_(io_context), socket_(io_context),body_(body)
     {
-        *size = static_cast<size_t>(0);
-        size_ = size;
+
         std::ostream request_stream(&request_);
-        request_stream << "GET " << path << " HTTP/1.0\r\n";
+        request_stream << "GET " << path << " HTTP/1.1\r\n";
         request_stream << "Host: " << server << "\r\n";
         request_stream << "Accept: */*\r\n";
-        request_stream << "Connection: close\r\n\r\n";
-        resolver_.async_resolve(server, "http",
-                                boost::bind(&HttpClient::handle_resolve, this, boost::asio::placeholders::error,
+        request_stream << "Content-Length:"<<request_body.size()<<"\r\n";
+        request_stream << "Connection:Close\r\n\r\n";
+        request_stream << request_body;
+        //request_stream << "";
+        boost::asio::ip::tcp::resolver::query query(server, port);
+        resolver_.async_resolve(query,
+                                boost::bind(&HttpClient2Python::handle_resolve, this, boost::asio::placeholders::error,
                                             boost::asio::placeholders::results));
     }
 
@@ -40,7 +42,7 @@ class HttpClient {
             // successfully establish a connection.
             boost::asio::async_connect(
                     socket_, endpoints,
-                    boost::bind(&HttpClient::handle_connect, this, boost::asio::placeholders::error));
+                    boost::bind(&HttpClient2Python::handle_connect, this, boost::asio::placeholders::error));
         } else {
             std::cout << "Error: " << err.message() << "\n";
         }
@@ -51,7 +53,7 @@ class HttpClient {
             // The connection was successful. Send the request.
             boost::asio::async_write(
                     socket_, request_,
-                    boost::bind(&HttpClient::handle_write_request, this, boost::asio::placeholders::error));
+                    boost::bind(&HttpClient2Python::handle_write_request, this, boost::asio::placeholders::error));
         } else {
             std::cout << "Error: " << err.message() << "\n";
         }
@@ -65,7 +67,7 @@ class HttpClient {
             // constructor.
             boost::asio::async_read_until(
                     socket_, response_, "\r\n",
-                    boost::bind(&HttpClient::handle_read_status_line, this, boost::asio::placeholders::error));
+                    boost::bind(&HttpClient2Python::handle_read_status_line, this, boost::asio::placeholders::error));
         } else {
             std::cout << "Error: " << err.message() << "\n";
         }
@@ -90,13 +92,12 @@ class HttpClient {
                 std::cout << status_code << "\n";
                 return;
             }
-
             // Read the response headers, which are terminated by a blank line.
             boost::asio::async_read(
                     socket_, response_, boost::asio::transfer_at_least(1),
-                    boost::bind(&HttpClient::handle_read_headers, this, boost::asio::placeholders::error));
+                    boost::bind(&HttpClient2Python::handle_read_headers, this, boost::asio::placeholders::error));
         } else {
-            std::cout << "Error: " << err << "\n";
+            std::cout << "Error1: " << err << "\n";
         }
     }
 
@@ -106,38 +107,32 @@ class HttpClient {
             std::string header;
             while (std::getline(response_stream, header) && header != "\r") {
                 //get Content-Type
-                if(header.substr(0,12)=="Content-Type"){
-                    file_name_ =std::to_string(resource_id_)+"."+ header.substr(header.find_last_of('/') + 1);
-                    deleteAllMark(file_name_,"\r");
-                    outfile_.open("data/" + file_name_, std::ios::app | std::ios::binary);//path.substr(path.find_last_of('/') + 1)
-                    if (!outfile_) {
-                        std::cout << "打开文件失败,文件名:" <<file_name_<<"\n";
-                    }
-                }
             }
 
             // Start reading remaining data until EOF.
             boost::asio::async_read(
                     socket_, response_, boost::asio::transfer_at_least(1),
-                    boost::bind(&HttpClient::handle_read_content, this, boost::asio::placeholders::error));
+                    boost::bind(&HttpClient2Python::handle_read_content, this, boost::asio::placeholders::error));
         } else {
-            std::cout << "Error: " << err << "\n";
+            std::cout << "Error2: " << err << "\n";
         }
     }
 
     void handle_read_content(const boost::system::error_code &err) {
-        if (!err) {
+        if (!err || (err == boost::asio::error::eof && response_.size())) {
             // Write all of the data that has been read so far.
             // std::cout << std::endl << "-------" << std::endl;
             // std::cout << &response_;
-            *size_+=response_.size();
-            outfile_ << &response_;
             // Continue reading remaining data until EOF.
+            body_+=std::string(boost::asio::buffers_begin(response_.data()), boost::asio::buffers_end(response_.data()));
+            response_.consume(response_.size());// 清空buf
+            if (err)
+                return;
             boost::asio::async_read(
                     socket_, response_, boost::asio::transfer_at_least(1),
-                    boost::bind(&HttpClient::handle_read_content, this, boost::asio::placeholders::error));
-        } else if (err != boost::asio::error::eof) {
-            std::cout << "Error: " << err << "\n";
+                    boost::bind(&HttpClient2Python::handle_read_content, this, boost::asio::placeholders::error));
+        } else if(err != boost::asio::error::eof){
+            std::cout << "Error3: " << err << "\n";
         }
     }
 
@@ -145,10 +140,7 @@ class HttpClient {
     tcp::socket socket_;
     boost::asio::streambuf request_;
     boost::asio::streambuf response_;
-    std::ofstream outfile_;
-    size_t* size_;
-    size_t resource_id_;
-    std::string &file_name_;
+    std::string &body_;
 };
 
-#endif // HTTP_CLIENT_HPP_
+#endif // HTTP_CLIENT_TO_PYTHON_HPP_
