@@ -124,7 +124,7 @@ public:
 		std::string server="127.0.0.1",port="8888",request_body,python_response_body, path="/model"; //这里path没用 但是不能为空
 		boost::property_tree::ptree response_pt;
 		response_pt.put<std::string>("type", "get_strategy");
-		response_pt.put<int>("nums", 1000);//共有 3952 个电影
+		response_pt.put<int>("nums", 1100);//共有 3952 个电影 这里请求多少要根据缓存大小来修改
 		std::stringstream wos;
 		boost::property_tree::write_json(wos, response_pt);
 		request_body = wos.str();
@@ -155,7 +155,7 @@ public:
 	}
 
 	bool buffer_new_resource(std::shared_ptr<ResourceInfo> ri, size_t current_size,size_t max_size){
-		return true;
+		return false;
 	}
 
 	void buffered_resource_visited(std::shared_ptr<ResourceInfo> ri){

@@ -32,7 +32,7 @@ class PCBuffer {
         std::lock_guard<std::mutex> lck(log_mutex_);
         std::ofstream outfile("bufferlog.txt", std::ios::out | std::ios::app);
         std::string time;
-        time = format("%d.%d %d:%d ",gmtm->tm_year+1900,gmtm->tm_mday,(gmtm->tm_hour+8)%24,gmtm->tm_min);
+        time = format("%d.%d.%d %d:%d ",gmtm->tm_year+1900,gmtm->tm_mon,gmtm->tm_mday,(gmtm->tm_hour+8)%24,gmtm->tm_min);
         while(time.size()<14){
             time += ' ';
         }
@@ -41,7 +41,7 @@ class PCBuffer {
         outfile.close();
     }
 
-    bool get_resource_info(std::string url ,std::shared_ptr<ResourceInfo> &ri ,bool flag_not_add_visit_times = false); // Get resource from net or buf ,return ResourceInfo
+    bool get_resource_info(std::string url ,std::shared_ptr<ResourceInfo> &ri ,bool is_prebuff_before_simulation = false); // Get resource from net or buf ,return ResourceInfo
 
     void add_to_train_set(std::string url,int client); // 向测试集添加数据
 
@@ -89,6 +89,7 @@ class PCBuffer {
     std::unordered_map<std::string, std::shared_ptr<ResourceInfo>> resource_map_;
     std::shared_ptr<BaseStrategy>strategy_;
     bool running_{ false };
+    bool stop_add_prebuffer_{ false };//buffer is full, stop to add. This is used in prebuffer before simulation.
     //BaseStrategy* strategy_{nullptr};
 };
 

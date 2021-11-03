@@ -47,7 +47,7 @@ PCBuffer::PCBuffer(){
 	std::shared_ptr<ResourceInfo> ri;
     for( std::string &url:urls){
         //预缓存
-        cout << url << endl;
+        Sleep(200);// 不然容易被百度屏蔽
         boost::asio::post(*tp.get_pool(), boost::bind(&PCBuffer::get_resource_info,this,url, ri,true));
     }
 }
@@ -209,7 +209,9 @@ PCBuffer::~PCBuffer()
     running_ = false;
 }
 
-bool PCBuffer::get_resource_info(std::string url ,std::shared_ptr<ResourceInfo> &ri ,bool flag_not_add_visit_times){
+bool PCBuffer::get_resource_info(std::string url ,std::shared_ptr<ResourceInfo> &ri ,bool is_prebuff_before_simulation){
+    if (is_prebuff_before_simulation && stop_add_prebuffer_)
+        return false;
     auto it = resource_map_.find(url);
     if (it != resource_map_.end()) { // resource found in buffer
         it->second->visit_times++;
@@ -265,6 +267,7 @@ bool PCBuffer::get_resource_info(std::string url ,std::shared_ptr<ResourceInfo> 
         delete size;
     }
 
+
     if (strategy_->buffer_new_resource(new_ri,current_size_,max_size_)) {//判断是否缓存
         //如果要缓存则清除出足够的空间 清除的策略也要用strategy_里的
         long long need_more_size =  new_ri->size + current_size_ - max_size_;
@@ -277,13 +280,25 @@ bool PCBuffer::get_resource_info(std::string url ,std::shared_ptr<ResourceInfo> 
             return false; 
         }
     }
+    else if (is_prebuff_before_simulation && !stop_add_prebuffer_) {
+        long long need_more_size =  new_ri->size + current_size_ - max_size_;
+        if (need_more_size > 0 && is_prebuff_before_simulation)
+            stop_add_prebuffer_ = true;
+        else{
+            if(!add_resource(new_ri)){
+                boost::filesystem::path tmpPath("./data/"+new_ri->file_name);//缓存失败（一般是由于空间限制）就删除已经下载的文件
+                boost::filesystem::remove(tmpPath);
+                return false; 
+            }
+        }
+    }
     else{
         boost::filesystem::path tmpPath("./data/"+new_ri->file_name);//不缓存就删除已经下载的文件
         boost::filesystem::remove(tmpPath);
     }
 
     ri = new_ri;
-    if(!flag_not_add_visit_times) // if it is preload flag_not_add_visit_times should be true 
+    if(!is_prebuff_before_simulation) // if it is preload flag_not_add_visit_times should be true 
         ri->visit_times++;
     return true;
 }
