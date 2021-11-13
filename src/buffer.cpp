@@ -52,6 +52,17 @@ PCBuffer::PCBuffer(){
     }
 }
 
+void PCBuffer::delete_file(std::string name){
+    try{
+        boost::filesystem::path tmpPath(name);
+        boost::filesystem::remove(tmpPath);
+    }
+    catch (std::exception& e){
+        std::cout << "exception(delete_file):" << e.what() << std::endl;
+    }
+
+}
+
 bool PCBuffer::add_resource(std::shared_ptr<ResourceInfo> ri) {
     if(ri==nullptr){
         log("add_resource invalid parameter");
@@ -164,7 +175,7 @@ bool PCBuffer::get_resource_from_http_2file(const std::string &server,const std:
         io_context.run();
         return true;
     } catch (std::exception &e) {
-        std::cout << "Exception: " << e.what() << "\n";
+        std::cout << "Exception(get_resource_from_http_2file): " << e.what() << "\n";
         return false;
     }
     return false;
@@ -180,7 +191,7 @@ bool PCBuffer::get_resource_from_https_2file(const std::string& server, const st
         io_context.run();
         return true;
     } catch (std::exception &e) {
-        std::cout << "Exception: " << e.what() << "\n";
+        std::cout << "Exception(get_resource_from_https_2file): " << e.what() << "\n";
         return false;
     }
     return false;
@@ -275,8 +286,7 @@ bool PCBuffer::get_resource_info(std::string url ,std::shared_ptr<ResourceInfo> 
             strategy_->clear_buffer_for_size(static_cast<size_t>(need_more_size), this, &PCBuffer::delete_resource_by_ri);
         }
         if(!add_resource(new_ri)){
-            boost::filesystem::path tmpPath("./data/"+new_ri->file_name);//缓存失败（一般是由于空间限制）就删除已经下载的文件
-            boost::filesystem::remove(tmpPath);
+            delete_file("./data/" + new_ri->file_name);
             return false; 
         }
     }
@@ -286,15 +296,13 @@ bool PCBuffer::get_resource_info(std::string url ,std::shared_ptr<ResourceInfo> 
             stop_add_prebuffer_ = true;
         else{
             if(!add_resource(new_ri)){
-                boost::filesystem::path tmpPath("./data/"+new_ri->file_name);//缓存失败（一般是由于空间限制）就删除已经下载的文件
-                boost::filesystem::remove(tmpPath);
+                delete_file("./data/" + new_ri->file_name);
                 return false; 
             }
         }
     }
     else{
-        boost::filesystem::path tmpPath("./data/"+new_ri->file_name);//不缓存就删除已经下载的文件
-        boost::filesystem::remove(tmpPath);
+        delete_file("./data/" + new_ri->file_name);
     }
 
     ri = new_ri;

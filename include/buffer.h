@@ -63,6 +63,8 @@ class PCBuffer {
 
     std::unordered_map<std::string, std::shared_ptr<ResourceInfo>>& get_resource_map();
 
+    bool running_{ false };
+
  private:
 
     bool get_resource_from_http_2file(const std::string & server, const std::string & path, std::string & file_name, size_t * size);
@@ -77,6 +79,8 @@ class PCBuffer {
 
     PCBuffer &operator=(const PCBuffer &rhs) = delete;
 
+    void delete_file(std::string name);
+
     bool initialized_{false};
     bool quit_flag_{false};
     std::condition_variable cv_;
@@ -88,7 +92,6 @@ class PCBuffer {
     size_t resource_id_{ 0 };
     std::unordered_map<std::string, std::shared_ptr<ResourceInfo>> resource_map_;
     std::shared_ptr<BaseStrategy>strategy_;
-    bool running_{ false };
     bool stop_add_prebuffer_{ false };//buffer is full, stop to add. This is used in prebuffer before simulation.
     //BaseStrategy* strategy_{nullptr};
 };

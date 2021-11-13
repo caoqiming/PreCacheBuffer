@@ -18,18 +18,21 @@ int main(int argc, char* argv[])
 
     PCBuffer &bf=PCBuffer::get_instance();//buffer 里定时任务有用到线程池，所以必须先初始化线程池再初始化buffer
 
-    try
-    {
-        // Initialise the server.
-        http::server::server s("0.0.0.0", "80",".");
+    while(bf.running_){
+        try
+        {
+            // Initialise the server.
+            http::server::server s("0.0.0.0", "80",".");
 
-        // Run the server until stopped.
-        s.run();
+            // Run the server until stopped.
+            s.run();
+        }
+        catch (std::exception& e)
+        {
+            std::cerr << "exception(main server): " << e.what() << "\n";
+        }
     }
-    catch (std::exception& e)
-    {
-        std::cerr << "exception: " << e.what() << "\n";
-    }
+
 
     return 0;
 }
